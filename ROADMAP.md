@@ -8,19 +8,19 @@ This roadmap is impact-driven, avoiding hype to focus on solving real architectu
 - [x] **In-process WASM execution** via `wazero`.
 - [x] **Stdin / Stdout model** for request-response.
 - [x] **Zero idle memory** footprint.
-- [ ] **Crash-safe execution** (panic isolation).
-- [ ] **Explicit execution timeouts** configuration.
-- [ ] **Memory limits** per execution.
-- [ ] **Documentation:** Architecture deep-dive & Transparent benchmarks.
+- [x]Crash-safe execution** (panic isolation).
+- [x]*Explicit execution timeouts** configuration.
+- [x]*Memory limits** per execution.
+- [x] **Documentation:** Architecture deep-dive & Transparent benchmarks.
 
 ## 🟡 Phase 1: Workers Parity
 *Allow conceptual migration from Cloudflare Workers without copying edge abstractions.*
 
-- [ ] **Structured HTTP Context:** Pass Method, Headers, Path, and Query via structured JSON/Proto to Stdin.
-- [ ] **Header Mutation:** Allow WASM to modify response headers.
-- [ ] **Status Code Control:** Allow WASM to set HTTP 4xx/5xx codes.
-- [ ] **Environment Variables:** Configuration per function.
-- [ ] **Per-route Binding:** Map specific `.wasm` files to specific Caddy routes.
+- [x] **Structured HTTP Context:** Pass Method, Headers, Path, and Query via structured JSON/Proto to Stdin.
+- [x] **Header Mutation:** Allow WASM to modify response headers.
+- [x] **Status Code Control:** Allow WASM to set HTTP 4xx/5xx codes.
+- [x] **Environment Variables:** Configuration per function.
+- [x] **Per-route Binding:** Map specific `.wasm` files to specific Caddy routes.
 
 ## 🔵 Phase 2: What Workers Cannot Do
 *Surpass Cloud Workers by exploiting local, in-process execution properties.*

@@ -1,8 +1,11 @@
 package reactor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -20,6 +23,19 @@ import (
 func init() {
 	caddy.RegisterModule(Reactor{})
 	httpcaddyfile.RegisterHandlerDirective("reactor", parseCaddyfile)
+}
+
+type RequestPayload struct {
+	Method  string              `json:"method"`
+	URI     string              `json:"uri"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+}
+
+type ResponsePayload struct {
+	Status  int                 `json:"status"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
 }
 
 type Reactor struct {
@@ -48,17 +64,14 @@ func (r *Reactor) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("wasm file path is required")
 	}
 
-	// 1. Configuração do Runtime (Engine)
 	ctxWazero := context.Background()
 	rConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 
-	// ✅ CORREÇÃO: Aplicamos o limite de memória AQUI, na criação do Runtime
 	if r.MemoryLimit != "" {
 		bytes, err := humanize.ParseBytes(r.MemoryLimit)
 		if err != nil {
 			return fmt.Errorf("invalid memory_limit: %v", err)
 		}
-
 		if bytes > 0 {
 			const wasmPageSize = 65536
 			pages := uint32(bytes / wasmPageSize)
@@ -66,17 +79,12 @@ func (r *Reactor) Provision(ctx caddy.Context) error {
 				pages++
 			}
 			rConfig = rConfig.WithMemoryLimitPages(pages)
-			r.logger.Info("memory limit configured", zap.String("limit", r.MemoryLimit), zap.Uint32("pages", pages))
 		}
 	}
 
-	// Cria o runtime com as configurações (Timeout kill + Memory limit)
 	r.engine = wazero.NewRuntimeWithConfig(ctxWazero, rConfig)
-
-	// 2. Setup do WASI
 	wasi_snapshot_preview1.MustInstantiate(ctxWazero, r.engine)
 
-	// 3. Compilação do Módulo
 	wasmBytes, err := os.ReadFile(r.Path)
 	if err != nil {
 		return fmt.Errorf("failed to read wasm file: %w", err)
@@ -87,7 +95,6 @@ func (r *Reactor) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("failed to compile wasm binary: %w", err)
 	}
 
-	// Default Timeout
 	if r.Timeout == 0 {
 		r.Timeout = caddy.Duration(60 * time.Second)
 	}
@@ -106,35 +113,72 @@ func (r *Reactor) ServeHTTP(rw http.ResponseWriter, req *http.Request, next cadd
 	ctx, cancel := context.WithTimeout(req.Context(), time.Duration(r.Timeout))
 	defer cancel()
 
-	// Configuração da Execução (Instância)
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return err
+	}
+
+	reqPayload := RequestPayload{
+		Method:  req.Method,
+		URI:     req.RequestURI,
+		Headers: req.Header,
+		Body:    string(bodyBytes),
+	}
+
+	inputJSON, err := json.Marshal(reqPayload)
+	if err != nil {
+		r.logger.Error("failed to marshal request", zap.Error(err))
+		return caddyhttp.Error(http.StatusInternalServerError, err)
+	}
+
+	var stdoutBuf bytes.Buffer
+
 	config := wazero.NewModuleConfig().
-		WithStdout(rw).
+		WithStdout(&stdoutBuf).
 		WithStderr(os.Stderr).
-		WithStdin(req.Body).
+		WithStdin(bytes.NewReader(inputJSON)).
 		WithArgs(r.Args...)
 
 	for k, v := range r.Env {
 		config = config.WithEnv(k, v)
 	}
 
-	// Instancia e executa (O limite de memória já está imposto pelo r.engine)
 	instance, err := r.engine.InstantiateModule(ctx, r.code, config)
-
 	if err != nil {
-		// Timeout
 		if ctx.Err() == context.DeadlineExceeded {
-			r.logger.Error("wasm execution timed out",
-				zap.Duration("limit", time.Duration(r.Timeout)),
-			)
 			return caddyhttp.Error(http.StatusGatewayTimeout, fmt.Errorf("execution time limit exceeded"))
 		}
-
-		// Out of Memory ou Panic
 		r.logger.Error("wasm execution failed", zap.Error(err))
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
-
 	defer instance.Close(ctx)
+
+	if stdoutBuf.Len() == 0 {
+		r.logger.Error("wasm returned empty response (crashed?)")
+		return caddyhttp.Error(http.StatusInternalServerError, fmt.Errorf("wasm module crashed or returned no data"))
+	}
+
+	var respPayload ResponsePayload
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &respPayload); err != nil {
+		r.logger.Error("invalid json response from wasm",
+			zap.Error(err),
+			zap.String("raw_output", stdoutBuf.String()))
+		return caddyhttp.Error(http.StatusBadGateway, fmt.Errorf("wasm returned invalid protocol json"))
+	}
+
+	for k, v := range respPayload.Headers {
+		for _, val := range v {
+			rw.Header().Add(k, val)
+		}
+	}
+
+	if respPayload.Status == 0 {
+		respPayload.Status = 200
+	}
+
+	rw.WriteHeader(respPayload.Status)
+	rw.Write([]byte(respPayload.Body))
+
 	return nil
 }
 

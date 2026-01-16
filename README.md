@@ -42,23 +42,29 @@ We compared a standard **Docker** container (running as a daemon) against **Reac
 You can run this duel on your own machine using the provided `benchmark/` folder.
 
 1. **Build Docker Image:**
+
    ```bash
    cd benchmark/docker && docker build -t benchmark-go . && cd ../..
    ```
 2. **Build Wasm Binary:**
+
    ```bash
     cd benchmark/wasm && GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -o tax.wasm main.go && cd ../..
     ```
 3. **Run the Duel:**
+
 - Terminal 1 (Docker):
+
     ```bash
     docker run --rm -p 8081:8081 benchmark-go
     ```
 - Terminal 2 (Reactor):
+
     ```bash
     ./caddy-reactor run --config Caddyfile.test --adapter caddyfile
     ```
 - Terminal 3 (Client):
+
     ```bash
     time curl -s -X POST http://localhost:8080/api/bench -d '{"id":"1", "valor":100}'
     ```
@@ -148,22 +154,10 @@ func main() {
 GOOS=wasip1 GOARCH=wasm go build -o processor.wasm main.go
 ```
 
-🗺️ Roadmap
-🟢 Phase 0: Foundation (Completed)
-- [x] In-process WASM execution via wazero.
-- [x] Stdin / Stdout model.
-- [x] Zero idle memory footprint.
-- [x] Crash-safe execution (Panic/Loop isolation).
-- [x] Explicit execution timeouts.
-- [x] Memory limits per execution.
-
-🟡 Phase 1: Workers Parity (Next)
-- [ ] Structured HTTP Context (Headers, Method, Path via JSON).
-- [ ] Header Mutation (Allow WASM to set Response Headers).
-- [ ] Status Code Control.
-
 ---
 
 ## 📝 License
 
-Apache 2.0
+This project is licensed under the Apache License, Version 2.0.  
+See the [LICENSE](./LICENSE) file for more details.
+
