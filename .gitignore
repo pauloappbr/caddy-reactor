@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Wasm compiled files (except in examples/)
+*.wasm
+!examples/**/*.wasm
+
+# Go artifacts
+vendor/
+go.work
+go.work.sum
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Caddy local data
+caddy_data/
+caddy_config/
+autosave.json
